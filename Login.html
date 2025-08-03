@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Landing Page</title>
+  <!-- <script src="https://cdn.tailwindcss.com"></script> -->
+   <link rel="stylesheet" href="./public/output.css">
+</head>
+<body class="bg-black">
+
+  <!-- Background with content -->
+  <div class="fixed top-0 left-0 right-0 h-screen bg-cover bg-center bg-no-repeat z-40 shadow-lg"
+       style="background-image: url('https://www.freecodecamp.org/news/content/images/size/w2000/2022/09/jonatan-pie-3l3RwQdHRHg-unsplash.jpg');">
+
+    <!-- Top-left content -->
+    <div class="p-6 sm:p-10 md:p-16 lg:p-20">
+      <div class="text-white text-xl sm:text-2xl md:text-3xl font-semibold mb-4">
+        <p>We create modern<br />chatting websites</p>
+      </div>
+
+      <button onclick="openPopup()"
+        class="bg-blue-800 text-white text-lg px-6 py-2 rounded-lg border-4 border-blue-700 hover:bg-blue-900 hover:border-white transition">
+        Login
+      </button>
+    </div>
+  </div>
+
+  <!-- Popup Login Modal -->
+  <div id="popup" class="hidden fixed inset-0 flex items-center justify-center bg-black/50 z-50">
+    <div class="bg-white p-6 rounded-xl shadow-2xl w-11/12 max-w-lg relative">
+      
+      <!-- Close button -->
+      <button onclick="closePopup()" class="absolute top-3 right-3 text-blue-600 font-bold text-xl hover:text-red-600">&times;</button>
+      
+      <!-- Login Form -->
+      <div class="bg-blue-950 rounded-lg p-6">
+        <h2 class="text-3xl font-extrabold text-center text-blue-400 mb-6">Login</h2>
+
+        <form id="loginForm" action="/" method="POST" class="space-y-5">
+          <!-- Username -->
+          <div>
+            <label for="username" class="block text-sm font-medium text-white">Username</label>
+            <input
+              type="text"
+              name="username"
+              id="username"
+              required
+              class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-300 focus:outline-none"
+              placeholder="e.g. abhinav123"
+            />
+          </div>
+
+          <!-- Password -->
+          <div>
+            <label for="password" class="block text-sm font-medium text-white">Password</label>
+            <input
+              type="password"
+              name="password"
+              id="password"
+              required
+              class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-300 focus:outline-none"
+              placeholder="Enter a secure password"
+            />
+          </div>
+
+          <!-- Login Button -->
+          <div>
+            <button
+              type="submit"
+              class="w-full bg-blue-600 text-white py-2 rounded-md font-semibold hover:bg-blue-700 transition duration-200">
+              Login
+            </button>
+          </div>
+        </form>
+
+        <!-- Signup link -->
+        <p class="mt-6 text-center text-sm text-white">
+          Don't have an account?
+          <a href="/signup" class="text-blue-300 font-medium hover:underline">Sign up</a>
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- JS: Show/Hide Modal -->
+  <script>
+    function openPopup() {
+      document.getElementById('popup').classList.remove('hidden');
+    }
+    function closePopup() {
+      document.getElementById('popup').classList.add('hidden');
+    }
+
+
+
+
+    document.getElementById("loginForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    const username = document.getElementById("username").value.trim();
+    const password = document.getElementById("password").value;
+
+    const res = await fetch("/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password })
+    });
+
+    if (res.status === 200) {
+      window.location.href = "/home";
+    } else {
+      window.location.href = "/signup";
+    }
+  });
+
+  </script>
+</body>
+</html>
