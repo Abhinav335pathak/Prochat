@@ -9,7 +9,7 @@ function MainApp() {
   const [selectedName, setSelectedName] = useState('');
 
   useEffect(() => {
-    fetch('http://localhost:3000/api/students'|| 'https://arriving-large-toucan.ngrok-free.app/api/students', { credentials: 'include' })
+    fetch('https://prochat-e7hc.onrender.com/api/students'|| 'http://192.168.1.36:4000/', { credentials: 'include' })
       .then(res => res.json())
       .then(setStudents)
       .catch(console.error);
