@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Student Selector</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- Tailwind via CDN for dev convenience -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="./output.css">
+</head>
+<body class="bg-black justify-center items-center ">
+
+
+<nav class="bg-white shadow-md px-6 py-4 flex justify-between items-center">
+  <!-- Left: Logo & Links -->
+  <div class="flex items-center space-x-6">
+    <span class="text-xl font-bold text-red-600">MyApp</span>
+    <a href="#home" class="text-gray-700 hover:text-red-600">Home</a>
+    <a href="#about" class="text-gray-700 hover:text-red-600">About</a>
+    <a href="#rating" class="text-gray-700 hover:text-red-600">Rating</a>
+  </div>
+
+  <!-- Right: Welcome Message and Logout -->
+  <div class="flex items-center space-x-4">
+    <h1 class="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition">
+      Welcome, <span id="user"></span>!
+    </h1>
+    <button 
+      id="logoutBtn"
+      class="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition"
+    >
+      Logout
+    </button>
+  </div>
+</nav>
+<script>
+  
+  async function checkSession() {
+    const res = await fetch('/session');
+    const data = await res.json();
+  
+    if (data.loggedIn) {
+      document.getElementById('user').textContent = data.username;
+      
+    } else {
+      window.location.href = '/';
+    }
+  }
+
+  document.getElementById('logoutBtn').addEventListener('click', async () => {
+    await fetch('/logout', { method: 'POST' });
+    window.location.href = '/';
+  });
+
+  checkSession();
+
+</script>
+
+  
+
+ 
+  <div id="root" class="w-2/5 h-screen bg-slate-900 justify-center  items-center min-w-full"></div>
+
+  <!-- Vite serves ESM from /src/main.jsx -->
+  <script type="module" src="/src/main.jsx"></script>
+</body>
+</html>
