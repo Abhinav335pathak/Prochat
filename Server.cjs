@@ -1,160 +1,203 @@
-// server.js
+// server.cjs
+require('dotenv').config();
+
 const express = require('express');
-const { MongoClient } = require('mongodb');
+const { MongoClient, ObjectId } = require('mongodb');
 const session = require('express-session');
+const MongoStore = require('connect-mongo');
 const path = require('path');
 const cors = require('cors');
+const helmet = require('helmet');
+const bcrypt = require('bcrypt');
+const rateLimit = require('express-rate-limit');
+const compression = require('compression');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 4000;
+const HOST = "0.0.0.0";
 
-const uri = 'mongodb://localhost:27017';
-const dbName = 'studentDB';
-const client = new MongoClient(uri);
+const SALT_ROUNDS = 10;
 
-let db, collection;
+// ----- Security / perf middleware -----
+app.use(helmet({
+  crossOriginEmbedderPolicy: false
+}));
+app.use(
+  helmet.contentSecurityPolicy({
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+    },
+  })
+);
 
-// Middleware
+
+// Content Security Policy (relaxed for CDN & inline needed by your setup)
+app.use(helmet.contentSecurityPolicy({
+  useDefaults: true,
+  directives: {
+    defaultSrc: ["'self'"],
+    scriptSrc: ["'self'", "'unsafe-inline'", "https:", "http:"],
+    styleSrc: ["'self'", "'unsafe-inline'", "https:", "http:"],
+    imgSrc: ["'self'", "data:", "https:", "http:"],
+    connectSrc: ["'self'", "https:", "http:"],
+    fontSrc: ["'self'", "https:", "data:"],
+    objectSrc: ["'none'"],
+    frameAncestors: ["'self'"],
+    upgradeInsecureRequests: null
+  }
+}));
+
 app.use(cors({
-  origin: ['http://localhost:4173', 'http://localhost:5173' ,' https://arriving-large-toucan.ngrok-free.app'],
-  credentials: true,
-}));
-app.use(express.json());
-app.use(session({
-  secret: 'your-secret-key',
-  resave: false,
-  saveUninitialized: true,
-  cookie: { secure: false }
+  origin: (process.env.ALLOWED_ORIGINS?.split(',') || [
+   
+    'https://arriving-large-toucan.ngrok-free.app'
+  ]),
+  credentials: true
 }));
 
-// Static files
+app.use(compression());
+
+// Global rate limit
+app.use(rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300
+}));
+
+// Stricter auth route limiter
+const authLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 50,
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+// ----- Body parsing -----
+app.use(express.json({ limit: '10kb' }));
+
+// ----- Static -----
 app.use('/home/assets', express.static(path.join(__dirname, 'dist/assets')));
 app.use('/public', express.static(path.join(__dirname, 'public')));
+app.use('/src', express.static(path.join(__dirname, 'src')));
+app.use('/dist', express.static(path.join(__dirname, 'dist')));
 
-// Serve home page
-app.get('/home', (req, res) => {
-  if (!req.session.username) {
-    return res.redirect('/');
-  }
-  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+// ----- MongoDB -----
+const uri = process.env.MONGO_URI;
+if (!uri) {
+  console.error('Missing MONGO_URI in .env');
+  process.exit(1);
+}
+const client = new MongoClient(uri, {
+  connectTimeoutMS: 8000,
+  serverSelectionTimeoutMS: 8000
 });
 
-// Serve chat page with authentication check
-app.get('/home/:username', (req, res) => {
-  if (!req.session.username) {
-    return res.redirect('/');
+let db, studentsCollection, messagesCollection;
+
+async function connectDB() {
+  await client.connect();
+  db = client.db(); // default db from URI
+  studentsCollection = db.collection('students');
+  messagesCollection = db.collection('messages'); // NEW dedicated messages collection
+  // Useful indexes
+  await messagesCollection.createIndex({ sender: 1, receiver: 1, timestamp: 1 });
+  await studentsCollection.createIndex({ username: 1 }, { unique: true });
+  console.log('✅ Connected to MongoDB Atlas');
+}
+
+// ----- Sessions (Mongo store, not memory) -----
+app.use(session({
+  name: 'sid',
+  secret: process.env.SESSION_SECRET || 'replace_this_in_env',
+  resave: false,
+  saveUninitialized: false,
+  store: MongoStore.create({
+    mongoUrl: uri,
+    ttl: 24 * 60 * 60 // 1 day
+  }),
+  cookie: {
+    secure: process.env.NODE_ENV === 'production', // true behind HTTPS
+    httpOnly: true,
+    sameSite: process.env.NODE_ENV === 'production' ? 'lax' : 'lax',
+    maxAge: 24 * 60 * 60 * 1000
   }
-  res.sendFile(path.join(__dirname, 'chat.html'));
+}));
+
+// ----- Auth guard -----
+const requireAuth = (req, res, next) => {
+  if (!req.session.username) return res.status(401).json({ error: 'Unauthorized' });
+  next();
+};
+
+// ----- Routes -----
+app.get('/session', (req, res) => {
+  res.json({
+    loggedIn: !!req.session.username,
+    username: req.session.username || null
+  });
 });
 
-// Get all messages for the chat
-app.get('/api/messages', async (req, res) => {
+// Signup / Login / Logout
+app.post('/signup', authLimiter, async (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password) return res.status(400).json({ error: 'Username and password are required' });
+  if (String(password).length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters long' });
+
   try {
-    // Get messages from all users
-    const students = await collection.find({ messages: { $exists: true, $not: { $size: 0 } } })
-      .project({ username: 1, messages: 1 })
+    const existingUser = await studentsCollection.findOne({ username });
+    if (existingUser) return res.status(409).json({ error: 'Username already exists' });
+
+    const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
+    await studentsCollection.insertOne({
+      username,
+      password: hashedPassword,
+      createdAt: new Date()
+    });
+
+    req.session.username = username;
+    res.status(201).json({ success: true, username });
+  } catch (err) {
+    console.error('Signup error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/login', authLimiter, async (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password) return res.status(400).json({ error: 'Username and password are required' });
+
+  try {
+    const user = await studentsCollection.findOne({ username });
+    if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+
+    const ok = await bcrypt.compare(password, user.password);
+    if (!ok) return res.status(401).json({ error: 'Invalid credentials' });
+
+    req.session.username = user.username;
+    res.json({ success: true, username: user.username });
+  } catch (err) {
+    console.error('Login error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/logout', (req, res) => {
+  req.session.destroy(err => {
+    if (err) {
+      console.error('Logout error:', err);
+      return res.status(500).json({ error: 'Logout failed' });
+    }
+    res.clearCookie('sid');
+    res.json({ success: true });
+  });
+});
+
+// Students list (excludes self)
+app.get('/api/students', requireAuth, async (req, res) => {
+  try {
+    const students = await studentsCollection
+      .find({ username: { $ne: req.session.username } }, { projection: { password: 0 } })
       .toArray();
-
-    // Flatten and format messages
-    const allMessages = students.flatMap(student => 
-      student.messages.map(msg => ({
-        username: student.username,
-        message: msg.text,
-        timestamp: msg.timestamp,
-        isCurrentUser: student.username === req.session.username
-      }))
-    );
-
-    // Sort by timestamp
-    allMessages.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-    
-    res.json(allMessages);
-  } catch (err) {
-    console.error("Error fetching messages:", err);
-    res.status(500).json({ error: "Error fetching messages" });
-  }
-});
-
-// Add message to chat
-app.post('/send-message', async (req, res) => {
-  if (!req.session.username) {
-    return res.status(401).json({ error: "Not authenticated" });
-  }
-
-  const { message } = req.body;
-  if (!message) {
-    return res.status(400).json({ error: "Message cannot be empty." });
-  }
-
-  try {
-    await collection.updateOne(
-      { username: req.session.username },
-      { 
-        $push: { 
-          messages: {
-            text: message,
-            timestamp: new Date()
-          } 
-        },
-        $setOnInsert: { username: req.session.username }
-      },
-      { upsert: true }
-    );
-
-    res.status(201).json({ success: true });
-  } catch (err) {
-    console.error("Error saving message:", err);
-    res.status(500).json({ error: "Failed to save message" });
-  }
-});
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// Get messages for a specific user (if still needed)
-app.get('/api/students/:username/messages', async (req, res) => {
-  if (!req.session.username) {
-    return res.status(401).json({ error: "Not authenticated" });
-  }
-
-  const { username } = req.params;
-  try {
-    const student = await collection.findOne({ username });
-    if (!student) return res.status(404).json({ error: 'User not found' });
-
-    res.json(student.messages || []);
-  } catch (err) {
-    console.error('Error fetching messages:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Get all students (optional)
-app.get('/api/students', async (req, res) => {
-  try {
-    const students = await collection.find({}).toArray();
     res.json(students);
   } catch (err) {
     console.error('Error fetching students:', err);
@@ -162,98 +205,120 @@ app.get('/api/students', async (req, res) => {
   }
 });
 
-// Authentication routes
-app.get('/', (req, res) => {
-  if (req.session.username) {
-   
-    return res.redirect('/home');
-  }
-  res.sendFile(path.join(__dirname, 'Login.html'));
-});
-
-app.get('/signup', (req, res) => {
-  if (req.session.username) {
-    return res.redirect('/home');
-  }
-  res.sendFile(path.join(__dirname, 'signup.html'));
-});
-
-app.post('/signup', async (req, res) => {
-  const { username, password } = req.body;
+// Get chat messages between two users (from dedicated collection)
+app.get('/api/chat/:user1/:user2', requireAuth, async (req, res) => {
   try {
-    const existingUser = await collection.findOne({ username });
-    if (existingUser) return res.status(409).json({ error: 'Username already exists' });
+    const { user1, user2 } = req.params;
+    const currentUser = req.session.username;
 
-    const result = await collection.insertOne({ 
-      username, 
-      password, 
-      messages: [] 
-    });
-    
-    // Auto-login after signup
-    req.session.username = username;
-    res.status(201).json({ 
+    if (currentUser !== user1 && currentUser !== user2) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const msgs = await messagesCollection
+      .find({
+        $or: [
+          { sender: user1, receiver: user2 },
+          { sender: user2, receiver: user1 }
+        ]
+      })
+      .project({ _id: 1, sender: 1, receiver: 1, text: 1, timestamp: 1, read: 1 })
+      .sort({ timestamp: 1 })
+      .toArray();
+
+    const formatted = msgs.map(m => ({
+      id: m._id.toString(),
+      sender: m.sender,
+      receiver: m.receiver,
+      message: m.text,
+      timestamp: m.timestamp,
+      read: !!m.read
+    }));
+
+    res.json(formatted);
+  } catch (err) {
+    console.error('Error fetching chat messages:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Send a chat message (insert one doc; not saved to memory; stored in Mongo)
+app.post('/api/chat/send', requireAuth, async (req, res) => {
+  const { receiver, message } = req.body || {};
+  const sender = req.session.username;
+
+  if (!receiver || !message) return res.status(400).json({ error: 'Receiver and message are required.' });
+  if (sender === receiver) return res.status(400).json({ error: 'Cannot send message to yourself' });
+
+  try {
+    const receiverExists = await studentsCollection.findOne({ username: receiver });
+    if (!receiverExists) return res.status(404).json({ error: 'Receiver not found' });
+
+    const doc = {
+      sender,
+      receiver,
+      text: message,
+      timestamp: new Date(),
+      read: false
+    };
+
+    const { insertedId } = await messagesCollection.insertOne(doc);
+
+    res.status(201).json({
       success: true,
-      username: username
+      message: {
+        id: insertedId.toString(),
+        sender,
+        receiver,
+        message: message,
+        timestamp: doc.timestamp
+      }
     });
   } catch (err) {
-    console.error("Signup error:", err);
-    res.status(500).json({ error: 'Failed to add student' });
+    console.error('Error saving message:', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-app.post('/login', async (req, res) => {
-  const { username, password } = req.body;
-  try {
-    const user = await collection.findOne({ username, password });
-    if (user) {
-      req.session.username = user.username;
-      res.json({ 
-        success: true,
-        username: user.username
-      });
-    } else {
-      res.status(401).json({ error: 'Invalid credentials' });
-    }
-  } catch (error) {
-    console.error("Login error:", error);
-    res.status(500).json({ error: "Server error" });
-  }
+// ----- HTML routes -----
+app.get(['/', '/signup'], (req, res) => {
+  if (req.session.username) return res.redirect('/home');
+  res.sendFile(path.join(__dirname, req.path === '/' ? 'Login.html' : 'signup.html'));
 });
 
-app.post('/logout', (req, res) => {
-  req.session.destroy(err => {
-    if (err) {
-      return res.status(500).json({ error: 'Logout failed' });
-    }
-    res.json({ success: true });
-  });
+app.get(['/home', '/home/:username'], requireAuth, (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
-app.get('/session', (req, res) => {
-  if (req.session.username) {
-    res.json({ 
-      loggedIn: true, 
-      username: req.session.username 
-    });
-  } else {
-    res.json({ loggedIn: false });
-  }
+// ----- 404 -----
+app.use((req, res) => {
+  res.status(404).json({ error: 'Not found' });
 });
 
-// Start server after DB connects
+// ----- Error handler -----
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ error: 'Something went wrong!' });
+});
+
+// ----- Start -----
 async function start() {
   try {
-    await client.connect();
-    db = client.db(dbName);
-    collection = db.collection('students');
-    app.listen(PORT, () => {
-      console.log(`✅ Server running at http://localhost:${PORT}`);
+    await connectDB();
+    app.listen(PORT,HOST, () => {
+      console.log(`✅ Server running on port ${PORT}`);
+      console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
     });
-  } catch (err) {
-    console.error('MongoDB connection failed:', err);
+  } catch (e) {
+    console.error('Failed to start server:', e);
     process.exit(1);
   }
 }
 
 start();
+
+// Graceful shutdown
+process.on('SIGTERM', async () => {
+  try { await client.close(); } catch {}
+  process.exit(0);
+});
