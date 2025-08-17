@@ -136,6 +136,10 @@ app.get('/session', (req, res) => {
     username: req.session.username || null
   });
 });
+app.get(['/home', '/home/:username'], requireAuth, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
 
 // Signup / Login / Logout
 app.post('/signup', authLimiter, async (req, res) => {
