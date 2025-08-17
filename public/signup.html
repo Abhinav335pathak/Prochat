@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Sign Up | MySite</title>
+  <!-- <script src="https://cdn.tailwindcss.com"></script> -->
+   <link rel="stylesheet" href="./public/output.css">
+</head>
+<body class="bg-blue-100 flex items-center justify-center min-h-screen">
+
+  <!-- Background Image -->
+  <div class="fixed top-0 left-0 right-0 h-screen bg-cover bg-center bg-no-repeat z-0"
+       style="background-image: url('https://www.freecodecamp.org/news/content/images/size/w2000/2022/09/jonatan-pie-3l3RwQdHRHg-unsplash.jpg');">
+  </div>
+
+  <!-- Sign Up Card -->
+  <div class="relative z-10 w-full max-w-md bg-blue-950 bg-opacity-90 rounded-xl shadow-2xl p-8">
+    <h2 class="text-3xl font-extrabold text-center text-white mb-6">Create Account</h2>
+
+    <form id="loginForm" action="/signup" method="POST" class="space-y-5">
+      <!-- Username -->
+      <div>
+        <label for="username" class="block text-sm font-medium text-white">Username</label>
+        <input
+          type="text"
+          name="username"
+          id="username"
+          required
+          class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-300 focus:outline-none"
+          placeholder="e.g. abhinav123"
+        />
+      </div>
+
+      <!-- Password -->
+      <div>
+        <label for="password" class="block text-sm font-medium text-white">Password</label>
+        <input
+          type="password"
+          name="password"
+          id="password"
+          required
+          class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-300 focus:outline-none"
+          placeholder="Enter a secure password"
+        />
+      </div>
+
+      <!-- Sign Up Button -->
+      <div>
+        <button
+          type="submit"
+          class="w-full bg-blue-600 text-white py-2 rounded-md font-semibold hover:bg-blue-700 transition duration-200"
+        >
+          Sign Up
+        </button>
+      </div>
+    </form>
+
+    <!-- Footer -->
+    <p class="mt-6 text-center text-sm text-white">
+      Already have an account?
+      <a href="/" class="text-blue-300 font-medium hover:underline">Login</a>
+    </p>
+  </div>
+          
+<script>
+  document.getElementById("loginForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+
+  const newStudent = {
+    username: document.getElementById('username').value,
+    password: document.getElementById('password').value
+  };
+
+  // Now you can send newStudent to your server
+  const res = await fetch("/signup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(newStudent)
+  });
+
+ if (res.status === 201) {
+  window.location.href = "/";
+} else if (res.status === 409) {
+  alert("Username already exists. Please choose another.");
+} else {
+  alert("Signup failed. Please try again.");
+}
+});
+
+</script>
+
+
+</body>
+</html>
