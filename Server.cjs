@@ -54,9 +54,6 @@ const authLimiter = rateLimit({
 // ----- Body parsing -----
 app.use(express.json({ limit: '10kb' }));
 
-// ----- Static -----
-app.use('/public', express.static(path.join(__dirname, 'public')));
-
 // ----- MongoDB -----
 const uri = process.env.MONGO_URI;
 if (!uri) {
@@ -99,34 +96,10 @@ const requireAuth = (req, res, next) => {
   next();
 };
 
-// ----- Routes -----
+// ----- API Routes -----
 app.get('/session', (req, res) => {
   res.json({ loggedIn: !!req.session.username, username: req.session.username || null });
 });
-
-// HTML routes
-app.get('/', (req, res) => {
-  if (req.session.username) return res.redirect('/home');
-  res.sendFile(path.join(__dirname, 'public', 'Login.html'));
-});
-
-app.get('/signup', (req, res) => {
-  if (req.session.username) return res.redirect('/home');
-  res.sendFile(path.join(__dirname, 'public', 'signup.html'));
-});
-app.use(express.static(path.join(__dirname, 'dist')));
-
-app.get(['/home', '/home/:username'], requireAuth, (req, res) => {
-res.sendFile(path.join(__dirname, 'dist', 'index.html'));
-});
-
-
-
-
-
-
-
-
 
 // Signup
 app.post('/signup', authLimiter, async (req, res) => {
@@ -239,8 +212,13 @@ app.post('/api/chat/send', requireAuth, async (req, res) => {
   }
 });
 
-// ----- 404 -----
-app.use((req, res) => res.status(404).json({ error: "Not found" }));
+// ----- Serve Frontend (dist) -----
+app.use(express.static(path.join(__dirname, 'dist')));
+
+// SPA fallback (for React/Vite Router)
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
 
 // ----- Start -----
 async function start() {
