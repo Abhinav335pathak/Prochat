@@ -54,9 +54,6 @@ const authLimiter = rateLimit({
 // ----- Body parsing -----
 app.use(express.json({ limit: '10kb' }));
 
-// ----- Static -----
-app.use('/public', express.static(path.join(__dirname, 'public')));
-
 // ----- MongoDB -----
 const uri = process.env.MONGO_URI;
 if (!uri) {
@@ -102,21 +99,6 @@ const requireAuth = (req, res, next) => {
 // ----- Routes -----
 app.get('/session', (req, res) => {
   res.json({ loggedIn: !!req.session.username, username: req.session.username || null });
-});
-
-// HTML routes
-app.get('/', (req, res) => {
-  if (req.session.username) return res.redirect('/home');
-  res.sendFile(path.join(__dirname, 'public', 'Login.html'));
-});
-
-app.get('/signup', (req, res) => {
-  if (req.session.username) return res.redirect('/home');
-  res.sendFile(path.join(__dirname, 'public', 'signup.html'));
-});
-
-app.get(['/home', '/home/:username'], requireAuth, (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // Signup
@@ -228,6 +210,17 @@ app.post('/api/chat/send', requireAuth, async (req, res) => {
     console.error("Send message error:", err);
     res.status(500).json({ error: "Server error" });
   }
+});
+
+// ----- Serve Vite build -----
+app.use(express.static(path.join(__dirname, 'dist')));
+
+// React SPA fallback: send index.html for any non-API route
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api') || req.path.startsWith('/login') || req.path.startsWith('/signup')) {
+    return next();
+  }
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
 // ----- 404 -----
