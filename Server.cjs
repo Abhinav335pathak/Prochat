@@ -37,7 +37,7 @@ app.use(
 );
 
 app.use(cors({
-  origin: (process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:5173']),
+  origin: (process.env.ALLOWED_ORIGINS?.split(',') || ['https://prochat-e7hc.onrender.com']),
   credentials: true,
 }));
 
