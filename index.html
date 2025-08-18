@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Student Chat Application</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="/public/output.css">
   <style>
     #messages {
       scroll-behavior: smooth;
@@ -25,12 +24,14 @@
     }
     .glass {
       background: rgba(255, 255, 255, 0.05);
-      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+              backdrop-filter: blur(20px);
       border: 1px solid rgba(255, 255, 255, 0.1);
     }
     .glass-strong {
       background: rgba(15, 23, 42, 0.8);
-      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+              backdrop-filter: blur(24px);
       border: 1px solid rgba(6, 182, 212, 0.2);
     }
     .gradient-bg {
@@ -51,6 +52,8 @@
     .message-bubble { animation: slideUp .35s cubic-bezier(0.4, 0, 0.2, 1); }
     .glow-pulse { animation: pulse-glow 2s infinite; }
   </style>
+  <script type="module" crossorigin src="/home/assets/index-DMyAlKRy.js"></script>
+  <link rel="stylesheet" crossorigin href="/home/assets/index-psQkVc8-.css">
 </head>
 
 <body class="gradient-bg min-h-screen">
@@ -226,7 +229,7 @@
       document.getElementById('sendBtn').addEventListener('click', sendMessage);
       document.getElementById('chatBackBtn').addEventListener('click', () => {
         hideChatContainer();
-        window.location.assign(`https://prochat-e7hc.onrender.com` );
+        window.location.assign(`http://192.168.1.36:4000` );
       });
 
       // Auto refresh (kept)
@@ -343,6 +346,5 @@
   </script>
 
   <!-- React app -->
-  <script type="module" src="/src/main.jsx"></script>
 </body>
 </html>
